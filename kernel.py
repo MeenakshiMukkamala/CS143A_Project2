@@ -70,10 +70,10 @@ class Kernel:
     # Do not use real time to track how much time has passed as time is simulated.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def timer_interrupt(self) -> PID:
-        
+
         #Round Robin Scheduling
         self.quantum_counter += 1
-        if self.scheduling_algorithm == "RR" and self.quantum_counter == 4:
+        if self.scheduling_algorithm == "RR" and self.quantum_counter == 4 and len(self.ready_queue) > 0:
             if self.running is not self.idle_pcb:
                 self.ready_queue.append(self.running)
             self.running = self.ready_queue.popleft()
