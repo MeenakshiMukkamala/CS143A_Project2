@@ -1,6 +1,6 @@
 ### Fill in the following information before submitting
 # Group id: 
-# Members: 
+# Members: Rishita Dugar, Alex Do, Pragya Jhunjhunwala, Meenakshi Mukkamala
 
 
 
@@ -27,6 +27,7 @@ class Kernel:
     waiting_queue: deque[PCB]
     running: PCB
     idle_pcb: PCB
+    quantum_counter: int
 
     # Called before the simulation begins.
     # Use this method to initilize any variables you need throughout the simulation.
@@ -40,6 +41,7 @@ class Kernel:
         self.waiting_queue = deque()
         self.idle_pcb = PCB(0)
         self.running = self.idle_pcb
+        self.quantum_counter = 0
 
     # This method is triggered every time a new process has arrived.
     # new_process is this process's PID.
@@ -68,6 +70,16 @@ class Kernel:
     # Do not use real time to track how much time has passed as time is simulated.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def timer_interrupt(self) -> PID:
+        
+        #Round Robin Scheduling
+        self.quantum_counter += 1
+        if self.scheduling_algorithm == "RR" and self.quantum_counter == 4:
+            if self.running is not self.idle_pcb:
+                self.ready_queue.append(self.running)
+            self.running = self.ready_queue.popleft()
+            self.quantum_counter = 0
+        #End Round Robin Scheduling
+
         return self.running.pid 
     
     
@@ -78,10 +90,16 @@ class Kernel:
     def choose_next_process(self):
         if len(self.ready_queue) == 0:
                 return
-        
         if self.scheduling_algorithm == "FCFS":
             if self.running is self.idle_pcb:
                 self.running = self.ready_queue.popleft()
+        elif self.scheduling_algorithm == "RR":
+            if self.running is self.idle_pcb:
+                self.running = self.ready_queue.popleft()
+                self.quantum_counter = 0
         else:
             print("Unknown scheduling algorithm")
+
+
+
 

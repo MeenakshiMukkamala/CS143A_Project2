@@ -119,7 +119,6 @@ class Simulator:
                 raise SimulationError( \
                 """Process 0 (idle process) has been running for 1 second straight. 
                 This will not happen in tested simulations and is likely a bug in the kernel.""")
-            
             self.advance_current_process()
 
             self.check_for_arrival()
