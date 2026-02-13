@@ -51,13 +51,79 @@ class Kernel:
         self.idle_pcb = PCB(0)
         self.running = self.idle_pcb
         self.quantum_counter = 0
+        self.logger = logger
 
         # For Multilevel
         self.fg_queue = deque()
         self.bg_queue = deque()
         self.current_level = "Foreground"
         self.level_counter = 0
-        
+        self.level_ticks = 0
+        self.LEVEL_COMMIT_TICKS = 20
+
+    #Helper functions for Multilevel
+    def _level_has_work(self, level: str) -> bool:
+        if level == "Foreground":
+            return len(self.fg_queue) > 0
+        return len(self.bg_queue) > 0
+
+    def _other_level(self) -> str:
+        return "Background" if self.current_level == "Foreground" else "Foreground"
+
+    def _enqueue_preempted_running(self):
+        if self.running is self.idle_pcb:
+            return
+        if self.running.process_type == "Foreground":
+            # RR behavior: goes to back
+            self.fg_queue.append(self.running)
+            self.quantum_counter = 0
+        else:
+            self.bg_queue.appendleft(self.running)
+
+        self.running = self.idle_pcb
+
+    def _switch_level_if_possible(self) -> bool:
+        other = self._other_level()
+        if not self._level_has_work(other):
+            self.level_ticks = 0
+            return False
+
+        self.current_level = other
+        self.level_ticks = 0
+
+        if self.current_level == "Foreground":
+            self.quantum_counter = 0
+
+        return True
+
+    def _pick_next_multilevel(self):
+        if self.running is not self.idle_pcb:
+            return
+
+        if self.current_level == "Foreground":
+            if len(self.fg_queue) > 0:
+                self.running = self.fg_queue.popleft()
+                self.quantum_counter = 0
+                return
+
+            if len(self.bg_queue) > 0:
+                self.current_level = "Background"
+                self.level_ticks = 0
+                self.running = self.bg_queue.popleft()
+                return
+
+        else:
+            if len(self.bg_queue) > 0:
+                self.running = self.bg_queue.popleft()
+                return
+
+            if len(self.fg_queue) > 0:
+                self.current_level = "Foreground"
+                self.level_ticks = 0
+                self.quantum_counter = 0
+                self.running = self.fg_queue.popleft()
+                return
+
 
     # This method is triggered every time a new process has arrived.
     # new_process is this process's PID.
