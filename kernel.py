@@ -13,9 +13,13 @@ PID = int
 # It is only here for your convinience and can be modified however you see fit.
 class PCB:
     pid: PID
+    priority: int
+    process_type: str
 
     def __init__(self, pid: PID):
         self.pid = pid
+        self.priority = priority
+        self.process_type = process_type
 
 
 # This class represents the Kernel of the simulation.
@@ -28,6 +32,11 @@ class Kernel:
     running: PCB
     idle_pcb: PCB
     quantum_counter: int
+
+    fg_queue: deque[PCB]
+    bg_queue: deque[PCB]
+    current_level = str
+    level_counter = int
 
     # Called before the simulation begins.
     # Use this method to initilize any variables you need throughout the simulation.
@@ -42,6 +51,13 @@ class Kernel:
         self.idle_pcb = PCB(0)
         self.running = self.idle_pcb
         self.quantum_counter = 0
+
+        # For Multilevel
+        self.fg_queue = deque()
+        self.bg_queue = deque()
+        self.current_level = "Foreground"
+        self.level_counter = 0
+        
 
     # This method is triggered every time a new process has arrived.
     # new_process is this process's PID.
