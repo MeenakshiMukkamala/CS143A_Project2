@@ -208,25 +208,30 @@ class Kernel:
                     self._pick_next_multilevel()
                     return self.running.pid
 
+            # 200ms boundary: switch ONLY if other level has work
             if self.level_ticks >= self.LEVEL_COMMIT_TICKS:
-                self._enqueue_preempted_running()
-                self._switch_level_if_possible()
-                self._pick_next_multilevel()
-
-                return self.running.pid
+                other = self._other_level()
+                if self._level_has_work(other):
+                    self._enqueue_preempted_running()
+                    self._switch_level_if_possible()
+                    self._pick_next_multilevel()
+                    return self.running.pid
+                else:
+                    self.level_ticks = 0
 
             if self.current_level == "Foreground":
-                if self.running is not self.idle_pcb and self.running.process_type == "Foreground":
-                    self.quantum_counter += 1
+                if (self.running is not self.idle_pcb and
+                    self.running.process_type == "Foreground" and
+                    self.running.rr_ticks >= self.RR_QUANTUM_TICKS):
 
-                    if self.quantum_counter >= self.RR_QUANTUM_TICKS:
-                        if len(self.fg_queue) > 0:
-                            self.fg_queue.append(self.running)
-                            self.running = self.fg_queue.popleft()
-                        self.quantum_counter = 0
-                else:
-                    self.quantum_counter = 0
-
+                    if len(self.fg_queue) > 0:
+                        self.running.rr_ticks = 0
+                        self.fg_queue.append(self.running)
+                        self.running = self.fg_queue.popleft()
+                    else:
+                        # no one else to rotate with, just reset slice counter
+                        self.running.rr_ticks = 0
+            return self.running.pid
 
         # RR timer
         if self.scheduling_algorithm == "RR":
