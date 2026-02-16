@@ -246,5 +246,23 @@ class Kernel:
             if self.running is self.idle_pcb:
                 self.running = self.ready_queue.popleft()
                 self.quantum_counter = 0
+        elif self.scheduling_algorithm == "Priority":
+            # Find the best candidate in the ready queue (lowest priority number, then lowest PID)
+            best_idx = 0
+            for i in range(1, len(self.ready_queue)):
+                candidate = self.ready_queue[i]
+                current_best = self.ready_queue[best_idx]
+                if (candidate.priority, candidate.pid) < (current_best.priority, current_best.pid):
+                    best_idx = i
+
+            best = self.ready_queue[best_idx]
+
+            if self.running is self.idle_pcb:
+                del self.ready_queue[best_idx]
+                self.running = best
+            elif (best.priority, best.pid) < (self.running.priority, self.running.pid):
+                del self.ready_queue[best_idx]
+                self.ready_queue.append(self.running)
+                self.running = best
         else:
             print("Unknown scheduling algorithm")
