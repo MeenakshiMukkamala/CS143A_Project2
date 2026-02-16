@@ -180,50 +180,55 @@ class Kernel:
     # Do not use real time to track how much time has passed as time is simulated.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def timer_interrupt(self) -> PID:
+        #Multilevel timer
         if self.scheduling_algorithm == "Multilevel":
             self.level_ticks += 1
 
-        if self.current_level == "Foreground":
-            fg_running = (self.running is not self.idle_pcb and self.running.process_type == "Foreground")
-            if (not fg_running) and len(self.fg_queue) == 0:
+            if self.current_level == "Foreground":
+                fg_running = (self.running is not self.idle_pcb and self.running.process_type == "Foreground")
+                if (not fg_running) and len(self.fg_queue) == 0:
+                    self._switch_level_if_possible()
+                    self._pick_next_multilevel()
+                    return self.running.pid
+            else:
+                bg_running = (self.running is not self.idle_pcb and self.running.process_type == "Background")
+                if (not bg_running) and len(self.bg_queue) == 0:
+                    self._switch_level_if_possible()
+                    self._pick_next_multilevel()
+                    return self.running.pid
+
+            if self.level_ticks >= self.LEVEL_COMMIT_TICKS:
+                self._enqueue_preempted_running()
                 self._switch_level_if_possible()
                 self._pick_next_multilevel()
-                return self.running.pid
-        else:
-            bg_running = (self.running is not self.idle_pcb and self.running.process_type == "Background")
-            if (not bg_running) and len(self.bg_queue) == 0:
-                self._switch_level_if_possible()
-                self._pick_next_multilevel()
+
                 return self.running.pid
 
-        if self.level_ticks >= self.LEVEL_COMMIT_TICKS:
-            self._enqueue_preempted_running()
-            self._switch_level_if_possible()
-            self._pick_next_multilevel()
+            if self.current_level == "Foreground":
+                if self.running is not self.idle_pcb and self.running.process_type == "Foreground":
+                    self.quantum_counter += 1
 
-            return self.running.pid
+                    if self.quantum_counter >= self.RR_QUANTUM_TICKS:
+                        if len(self.fg_queue) > 0:
+                            self.fg_queue.append(self.running)
+                            self.running = self.fg_queue.popleft()
+                        self.quantum_counter = 0
+                else:
+                    self.quantum_counter = 0
 
-        if self.current_level == "Foreground":
-            if self.running is not self.idle_pcb and self.running.process_type == "Foreground":
+
+        # RR timer
+        if self.scheduling_algorithm == "RR":
+            if self.running is not self.idle_pcb:
                 self.quantum_counter += 1
 
                 if self.quantum_counter >= self.RR_QUANTUM_TICKS:
-                    if len(self.fg_queue) > 0:
-                        self.fg_queue.append(self.running)
-                        self.running = self.fg_queue.popleft()
+                    if len(self.ready_queue) > 0:
+                        self.ready_queue.append(self.running)
+                        self.running = self.ready_queue.popleft()
                     self.quantum_counter = 0
             else:
                 self.quantum_counter = 0
-
-        return self.running.pid
-
-        # RR timer
-        self.quantum_counter += 1
-        if self.scheduling_algorithm == "RR" and self.quantum_counter == 4 and len(self.ready_queue) > 0:
-            if self.running is not self.idle_pcb:
-                self.ready_queue.append(self.running)
-            self.running = self.ready_queue.popleft()
-            self.quantum_counter = 0
 
         return self.running.pid
     
