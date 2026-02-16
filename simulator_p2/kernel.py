@@ -80,9 +80,17 @@ class Kernel:
     def _enqueue_preempted_running(self):
         if self.running is self.idle_pcb:
             return
+
         if self.running.process_type == "Foreground":
-            self.fg_queue.appendleft(self.running)
+            # If FG quantum finished, it should go to the back (RR rotation)
+            if self.running.rr_ticks >= self.RR_QUANTUM_TICKS:
+                self.running.rr_ticks = 0
+                self.fg_queue.append(self.running)
+            else:
+                # Preempted mid-quantum: resume sooner
+                self.fg_queue.appendleft(self.running)
         else:
+            # Background is FCFS, resume where left off
             self.bg_queue.appendleft(self.running)
 
         self.running = self.idle_pcb
@@ -181,13 +189,12 @@ class Kernel:
     # Do not use real time to track how much time has passed as time is simulated.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def timer_interrupt(self) -> PID:
-        # -------------------------
-        # MULTILEVEL
-        # -------------------------
+        #Multilevel timer
         if self.scheduling_algorithm == "Multilevel":
             self.level_ticks += 1
+            if self.running is not self.idle_pcb and self.running.process_type == "Foreground":
+                self.running.rr_ticks += 1
 
-        # If current level is empty, switch immediately if possible
             if self.current_level == "Foreground":
                 fg_running = (self.running is not self.idle_pcb and self.running.process_type == "Foreground")
                 if (not fg_running) and len(self.fg_queue) == 0:
@@ -201,39 +208,39 @@ class Kernel:
                     self._pick_next_multilevel()
                     return self.running.pid
 
-        # 200ms boundary: level switching FIRST
             if self.level_ticks >= self.LEVEL_COMMIT_TICKS:
-                other = self._other_level()
-                if not self._level_has_work(other):
-                    self.level_ticks = 0
-                else:
-                    self._enqueue_preempted_running()
-                    self._switch_level_if_possible()
-                    self._pick_next_multilevel()
-                    return self.running.pid
+                self._enqueue_preempted_running()
+                self._switch_level_if_possible()
+                self._pick_next_multilevel()
 
-        # RR only inside Foreground level
+                return self.running.pid
+
             if self.current_level == "Foreground":
                 if self.running is not self.idle_pcb and self.running.process_type == "Foreground":
-                    self.running.rr_ticks += 1
-                    if self.running.rr_ticks >= self.RR_QUANTUM_TICKS:
-                        # time slice completed
-                        self.running.rr_ticks = 0
+                    self.quantum_counter += 1
+
+                    if self.quantum_counter >= self.RR_QUANTUM_TICKS:
                         if len(self.fg_queue) > 0:
                             self.fg_queue.append(self.running)
                             self.running = self.fg_queue.popleft()
-            return self.running.pid
+                        self.quantum_counter = 0
+                else:
+                    self.quantum_counter = 0
 
-    # -------------------------
-    # NON-MULTILEVEL (RR)
-    # -------------------------
-        self.quantum_counter += 1
-        if self.scheduling_algorithm == "RR" and self.quantum_counter == 4 and len(self.ready_queue) > 0:
+
+        # RR timer
+        if self.scheduling_algorithm == "RR":
             if self.running is not self.idle_pcb:
-                self.ready_queue.append(self.running)
-            self.running = self.ready_queue.popleft()
-            self.quantum_counter = 0
-        
+                self.quantum_counter += 1
+
+                if self.quantum_counter >= self.RR_QUANTUM_TICKS:
+                    if len(self.ready_queue) > 0:
+                        self.ready_queue.append(self.running)
+                        self.running = self.ready_queue.popleft()
+                    self.quantum_counter = 0
+            else:
+                self.quantum_counter = 0
+
         return self.running.pid
     
     # This is where you can select the next process to run.
@@ -250,5 +257,23 @@ class Kernel:
             if self.running is self.idle_pcb:
                 self.running = self.ready_queue.popleft()
                 self.quantum_counter = 0
+        elif self.scheduling_algorithm == "Priority":
+            # Find the best candidate in the ready queue (lowest priority number, then lowest PID)
+            best_idx = 0
+            for i in range(1, len(self.ready_queue)):
+                candidate = self.ready_queue[i]
+                current_best = self.ready_queue[best_idx]
+                if (candidate.priority, candidate.pid) < (current_best.priority, current_best.pid):
+                    best_idx = i
+
+            best = self.ready_queue[best_idx]
+
+            if self.running is self.idle_pcb:
+                del self.ready_queue[best_idx]
+                self.running = best
+            elif (best.priority, best.pid) < (self.running.priority, self.running.pid):
+                del self.ready_queue[best_idx]
+                self.ready_queue.append(self.running)
+                self.running = best
         else:
             print("Unknown scheduling algorithm")
